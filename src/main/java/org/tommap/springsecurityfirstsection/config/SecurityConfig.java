@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.web.configurers.SessionMan
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.password.HaveIBeenPwnedRestApiPasswordChecker;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
@@ -22,12 +23,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.tommap.springsecurityfirstsection.exceptionhandling.CustomAccessDeniedHandler;
 import org.tommap.springsecurityfirstsection.exceptionhandling.CustomBasicAuthenticationEntryPoint;
-import org.tommap.springsecurityfirstsection.filter.AuthoritiesLoggingAfterFilter;
-import org.tommap.springsecurityfirstsection.filter.AuthoritiesLoggingAtFilter;
 import org.tommap.springsecurityfirstsection.filter.CsrfCookieFilter;
-import org.tommap.springsecurityfirstsection.filter.JwtGeneratorFilter;
-import org.tommap.springsecurityfirstsection.filter.JwtValidatorFilter;
-import org.tommap.springsecurityfirstsection.filter.RequestValidationBeforeFilter;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -82,6 +78,9 @@ import static org.springframework.security.config.Customizer.withDefaults;
 public class SecurityConfig {
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
+        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(new KeycloakRoleConverter());
+
         CsrfTokenRequestAttributeHandler csrfTokenRequestAttributeHandler = new CsrfTokenRequestAttributeHandler();
 
 //        http.authorizeHttpRequests(request -> request.anyRequest().denyAll()); //throw 403
@@ -117,14 +116,9 @@ public class SecurityConfig {
 //            .csrf(AbstractHttpConfigurer::disable)
             .csrf(csrfConfig -> csrfConfig
                     .csrfTokenRequestHandler(csrfTokenRequestAttributeHandler)
-                    .ignoringRequestMatchers("/contact", "/register", "/apiLogin") //ignore CSRF protection for these APIs
+                    .ignoringRequestMatchers("/contact", "/register") //ignore CSRF protection for these APIs
                     .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
-//            .addFilterBefore(new RequestValidationBeforeFilter(), BasicAuthenticationFilter.class)
             .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
-//            .addFilterAfter(new AuthoritiesLoggingAfterFilter(), BasicAuthenticationFilter.class) //order of CsrfCookieFilter | AuthoritiesLoggingAfterFilter is random after BasicAuthenticationFilter
-//            .addFilterAt(new AuthoritiesLoggingAtFilter(), BasicAuthenticationFilter.class) //order of AuthoritiesLoggingAtFilter | BasicAuthenticationFilter is random
-            .addFilterAfter(new JwtGeneratorFilter(), BasicAuthenticationFilter.class)
-            .addFilterBefore(new JwtValidatorFilter(), BasicAuthenticationFilter.class)
                 /*
                     - set cookieHttpOnly=false to allow JS to read the cookie manually because we accept csrf token both
                         as part of cookie and request header
@@ -144,13 +138,13 @@ public class SecurityConfig {
 //                .requestMatchers("/myLoans").hasRole("USER") //turn-off for demo method level security
                 .requestMatchers("/user").authenticated()
                 //complex requirements - use access() method - pass Spring-based expression language
-                .requestMatchers("/notices", "/contact", "/error", "/register", "/invalidSession", "/apiLogin").permitAll()
+                .requestMatchers("/notices", "/contact", "/error", "/register").permitAll()
         );
 
-        http.formLogin(withDefaults());
+//        http.formLogin(withDefaults());
 //        http.formLogin(AbstractHttpConfigurer::disable);
 
-        http.httpBasic(hbc -> hbc.authenticationEntryPoint(new CustomBasicAuthenticationEntryPoint())); //Authorization: Basic [base64_encode(username:password)]
+//        http.httpBasic(hbc -> hbc.authenticationEntryPoint(new CustomBasicAuthenticationEntryPoint())); //Authorization: Basic [base64_encode(username:password)]
 //        http.httpBasic(AbstractHttpConfigurer::disable);
 
         /*
@@ -161,39 +155,13 @@ public class SecurityConfig {
          */
 //        http.exceptionHandling(ehc -> ehc.authenticationEntryPoint(new CustomBasicAuthenticationEntryPoint()));
 
+        http.oauth2ResourceServer(rsc -> rsc.jwt(jwtConfigurer ->
+                jwtConfigurer.jwtAuthenticationConverter(jwtAuthenticationConverter))
+        );
+
         http.exceptionHandling(ehc -> ehc.accessDeniedHandler(new CustomAccessDeniedHandler()));
 
         return http.build();
-    }
-
-//    @Bean
-//    public UserDetailsService userDetailsService(DataSource dataSource) { //connect to database
-//        return new JdbcUserDetailsManager(dataSource);
-//    }
-
-//    @Bean
-//    public UserDetailsService userDetailsService() {
-//        UserDetails user = User.withUsername("user")
-//                .password("{noop}User12345@U") //no encoding is applied at this point => save raw password directly
-//                .authorities("read")
-//                .build();
-//
-//        UserDetails admin = User
-//                .withUsername("admin")
-//                .password("{bcrypt}$2a$12$CGTLBP6igN3rfkgMkCQAD.ECrvM0FIcfLYBPEXbvFoSAnkSnqaf9C") //Admin12345@A
-//                .authorities("admin")
-//                .build();
-//
-//        return new InMemoryUserDetailsManager(user, admin);
-//    }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return PasswordEncoderFactories.createDelegatingPasswordEncoder(); //never try to hard code a particular PasswordEncoder
-        /*
-            - hashing - format where your password is going to be encrypted - no one should be able to reverse the plain text password - one-way process
-            - DelegatingPasswordEncoder allows system to handle multiple password encoders by using a prefix in the stored password
-         */
     }
 
     /*
@@ -201,11 +169,6 @@ public class SecurityConfig {
         - server decodes credentials to get username and password
         - use PasswordEncoder.matches(rawPassword, encodedPassword) to compare
      */
-
-    @Bean
-    public CompromisedPasswordChecker compromisedPasswordChecker() { //avoid simple password ... - since Spring 6.3
-        return new HaveIBeenPwnedRestApiPasswordChecker();
-    }
 
     /*
         - authentication provider
@@ -219,15 +182,5 @@ public class SecurityConfig {
             -> set authentication to security context
      */
 
-    @Bean
-    public AuthenticationManager authenticationManager(
-            TomUserDetailsManager userDetailsManager,
-            PasswordEncoder passwordEncoder
-    ) {
-        TomDaoAuthenticationProvider authenticationProvider = new TomDaoAuthenticationProvider(userDetailsManager, passwordEncoder);
-        ProviderManager providerManager = new ProviderManager(authenticationProvider);
-        providerManager.setEraseCredentialsAfterAuthentication(false);
-
-        return providerManager;
-    }
+    //convert EazyBank application to resource server => do not perform authentication [registration - login operations] - this is the responsibility of the authorization server [Keycloak]
 }
