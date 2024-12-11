@@ -77,14 +77,14 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @Configuration
 @Profile("!prod")
 public class SecurityConfig {
-    @Value("${spring.security.oauth2.resourceserver.opaquetoken.introspection-uri}")
-    private String introspectionUri;
-
-    @Value("${spring.security.oauth2.resourceserver.opaquetoken.client-id}")
-    private String clientId;
-
-    @Value("${spring.security.oauth2.resourceserver.opaquetoken.client-secret}")
-    private String clientSecret;
+//    @Value("${spring.security.oauth2.resourceserver.opaquetoken.introspection-uri}")
+//    private String introspectionUri;
+//
+//    @Value("${spring.security.oauth2.resourceserver.opaquetoken.client-id}")
+//    private String clientId;
+//
+//    @Value("${spring.security.oauth2.resourceserver.opaquetoken.client-secret}")
+//    private String clientSecret;
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -171,17 +171,17 @@ public class SecurityConfig {
             - resource server is trying to validate access token locally with this setup and without having any dependency on the auth server
             - only during the very first request, it will try to connect to the auth server to download the certificate from the jwk-set-uri
          */
-//        http.oauth2ResourceServer(rsc -> rsc.jwt(jwtConfigurer ->
-//                jwtConfigurer.jwtAuthenticationConverter(jwtAuthenticationConverter))
-//        );
-
-        http.oauth2ResourceServer(rsc -> rsc.opaqueToken(
-                otc -> otc
-                        .authenticationConverter(new KeycloakOpaqueRoleConverter())
-                        .introspectionUri(introspectionUri)
-                        .introspectionClientCredentials(clientId, clientSecret)
-                )
+        http.oauth2ResourceServer(rsc -> rsc.jwt(jwtConfigurer ->
+                jwtConfigurer.jwtAuthenticationConverter(jwtAuthenticationConverter))
         );
+
+//        http.oauth2ResourceServer(rsc -> rsc.opaqueToken(
+//                otc -> otc
+//                        .authenticationConverter(new KeycloakOpaqueRoleConverter())
+//                        .introspectionUri(introspectionUri)
+//                        .introspectionClientCredentials(clientId, clientSecret)
+//                )
+//        );
 
         http.exceptionHandling(ehc -> ehc.accessDeniedHandler(new CustomAccessDeniedHandler()));
 
