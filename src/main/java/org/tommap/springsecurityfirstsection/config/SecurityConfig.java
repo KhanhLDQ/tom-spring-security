@@ -1,6 +1,7 @@
 package org.tommap.springsecurityfirstsection.config;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -76,6 +77,15 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @Configuration
 @Profile("!prod")
 public class SecurityConfig {
+    @Value("${spring.security.oauth2.resourceserver.opaquetoken.introspection-uri}")
+    private String introspectionUri;
+
+    @Value("${spring.security.oauth2.resourceserver.opaquetoken.client-id}")
+    private String clientId;
+
+    @Value("${spring.security.oauth2.resourceserver.opaquetoken.client-secret}")
+    private String clientSecret;
+
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
@@ -155,8 +165,22 @@ public class SecurityConfig {
          */
 //        http.exceptionHandling(ehc -> ehc.authenticationEntryPoint(new CustomBasicAuthenticationEntryPoint()));
 
-        http.oauth2ResourceServer(rsc -> rsc.jwt(jwtConfigurer ->
-                jwtConfigurer.jwtAuthenticationConverter(jwtAuthenticationConverter))
+        /*
+            - auth server issues JWT token and the token can be validated locally [resource server] with the help of certificate downloaded
+                from jwk-set-uri [spring.security.oauth2.resourceserver.jwt.jwk-set-uri]
+            - resource server is trying to validate access token locally with this setup and without having any dependency on the auth server
+            - only during the very first request, it will try to connect to the auth server to download the certificate from the jwk-set-uri
+         */
+//        http.oauth2ResourceServer(rsc -> rsc.jwt(jwtConfigurer ->
+//                jwtConfigurer.jwtAuthenticationConverter(jwtAuthenticationConverter))
+//        );
+
+        http.oauth2ResourceServer(rsc -> rsc.opaqueToken(
+                otc -> otc
+                        .authenticationConverter(new KeycloakOpaqueRoleConverter())
+                        .introspectionUri(introspectionUri)
+                        .introspectionClientCredentials(clientId, clientSecret)
+                )
         );
 
         http.exceptionHandling(ehc -> ehc.accessDeniedHandler(new CustomAccessDeniedHandler()));
